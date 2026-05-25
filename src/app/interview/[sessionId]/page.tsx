@@ -25,9 +25,8 @@ export default async function InterviewPage({ params }: Props) {
       candidateName: sessionData.candidateName,
       technicalRole: sessionData.technicalRole,
       experienceLevel: sessionData.experienceLevel,
-      language: sessionData.language,
+      language: (sessionData.language === 'en' ? 'en' : 'es') as 'es' | 'en',
       status: sessionData.status,
-      language: sessionData.language as 'es' | 'en' | undefined,
     };
 
     const messagesSnapshot = await db

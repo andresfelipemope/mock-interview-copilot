@@ -18,35 +18,6 @@ import {
   Square
 } from 'lucide-react';
 
-function selectChipmunkVoice(language?: 'es' | 'en'): SpeechSynthesisVoice | null {
-  const voices = window.speechSynthesis.getVoices();
-  if (!voices.length) return null;
-
-  const langPrefix = language === 'en' ? 'en' : 'es';
-  const langVoices = voices.filter((v) => v.lang.toLowerCase().startsWith(langPrefix));
-
-  const chipmunkPatterns = [
-    /alvin/i,
-    /ardilla|squirrel/i,
-    /chipmunk|helium/i,
-    /child|niñ|kid|infantil/i,
-    /zira|paulina|helena|laura/i,
-  ];
-
-  for (const pattern of chipmunkPatterns) {
-    const match = langVoices.find((v) => pattern.test(v.name));
-    if (match) return match;
-  }
-
-  const highPitchHints = [/female|mujer|woman|femenin/i, /compact|mobile/i];
-  for (const pattern of highPitchHints) {
-    const match = langVoices.find((v) => pattern.test(v.name));
-    if (match) return match;
-  }
-
-  return langVoices[0] ?? voices[0] ?? null;
-}
-
 type SpeechRecognitionConstructor = new () => SpeechRecognition;
 
 interface SpeechRecognition extends EventTarget {
@@ -103,7 +74,6 @@ interface Session {
   experienceLevel: string;
   language: 'es' | 'en';
   status: string;
-  language?: 'es' | 'en';
 }
 
 interface InterviewRoomClientProps {
@@ -120,7 +90,35 @@ export default function InterviewRoomClient({ session, initialMessages }: Interv
   const [playingMessageId, setPlayingMessageId] = useState<string | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const spokenMessageIdsRef = useRef<Set<string>>(new Set());
-  const chipmunkVoiceRef = useRef<SpeechSynthesisVoice | null>(null);
+
+  const isEnglish = session.language === 'en';
+  const speechLocale = isEnglish ? 'en-US' : 'es-ES';
+
+  const copy = isEnglish
+    ? {
+        playListen: 'Listen',
+        playStop: 'Stop',
+        playTitle: 'Play interviewer message',
+        stopTitle: 'Stop playback',
+        micTitle: 'Dictate your answer with the microphone',
+        placeholder: 'Write your technical answer here...',
+        placeholderSending: 'Wait for the interviewer to respond...',
+        listening: 'Listening… speak now and review the text before sending',
+        hint: 'Press Enter to send · use the microphone to dictate',
+        analyzing: 'Gemini is analyzing your answer...',
+      }
+    : {
+        playListen: 'Escuchar',
+        playStop: 'Detener',
+        playTitle: 'Escuchar mensaje del entrevistador',
+        stopTitle: 'Detener reproducción',
+        micTitle: 'Dictar respuesta con el micrófono',
+        placeholder: 'Escribe tu respuesta técnica aquí...',
+        placeholderSending: 'Espera a que el entrevistador responda...',
+        listening: 'Escuchando… habla ahora y revisa el texto antes de enviar',
+        hint: 'Presiona Enter para enviar · usa el micrófono para dictar',
+        analyzing: 'Gemini está analizando tu respuesta...',
+      };
 
   const speakText = (text: string, messageId?: string) => {
     if (typeof window === 'undefined' || !window.speechSynthesis) return;
@@ -129,13 +127,7 @@ export default function InterviewRoomClient({ session, initialMessages }: Interv
     setPlayingMessageId(null);
 
     const utterance = new SpeechSynthesisUtterance(text);
-    utterance.lang = session.language === 'en' ? 'en-US' : 'es-ES';
-    utterance.pitch = 2;
-    utterance.rate = 1.25;
-
-    const voice =
-      chipmunkVoiceRef.current ?? selectChipmunkVoice(session.language);
-    if (voice) utterance.voice = voice;
+    utterance.lang = speechLocale;
 
     if (messageId) {
       utterance.onstart = () => setPlayingMessageId(messageId);
@@ -157,14 +149,16 @@ export default function InterviewRoomClient({ session, initialMessages }: Interv
 
     if (!SpeechRecognition) {
       alert(
-        'Tu navegador no soporta reconocimiento de voz nativo. Prueba con Google Chrome o Safari.'
+        isEnglish
+          ? 'Your browser does not support native speech recognition. Try Google Chrome or Safari.'
+          : 'Tu navegador no soporta reconocimiento de voz nativo. Prueba con Google Chrome o Safari.'
       );
       return;
     }
 
     const recognition = new SpeechRecognition();
     recognition.continuous = false;
-    recognition.lang = session.language === 'en' ? 'en-US' : 'es-ES';
+    recognition.lang = speechLocale;
     recognition.interimResults = false;
 
     recognition.onstart = () => {
@@ -195,17 +189,6 @@ export default function InterviewRoomClient({ session, initialMessages }: Interv
   useEffect(() => {
     scrollToBottom();
   }, [messages]);
-
-  useEffect(() => {
-    const loadVoices = () => {
-      chipmunkVoiceRef.current = selectChipmunkVoice(session.language);
-    };
-    loadVoices();
-    window.speechSynthesis?.addEventListener('voiceschanged', loadVoices);
-    return () => {
-      window.speechSynthesis?.removeEventListener('voiceschanged', loadVoices);
-    };
-  }, [session.language]);
 
   useEffect(() => {
     const modelMessages = messages.filter(
@@ -450,7 +433,7 @@ export default function InterviewRoomClient({ session, initialMessages }: Interv
                         onClick={() =>
                           isPlaying ? stopSpeaking() : speakText(msg.text, msg.id)
                         }
-                        title={isPlaying ? 'Detener reproducción' : 'Escuchar mensaje del entrevistador'}
+                        title={isPlaying ? copy.stopTitle : copy.playTitle}
                         className={`flex items-center gap-1 text-[10px] font-medium px-2 py-0.5 rounded-md transition-colors cursor-pointer ${
                           isPlaying
                             ? 'bg-indigo-500/20 text-indigo-300 border border-indigo-500/40'
@@ -462,7 +445,7 @@ export default function InterviewRoomClient({ session, initialMessages }: Interv
                         ) : (
                           <Play className="w-3 h-3 fill-current" />
                         )}
-                        {isPlaying ? 'Detener' : 'Escuchar'}
+                        {isPlaying ? copy.playStop : copy.playListen}
                       </button>
                     )}
                   </div>
@@ -479,7 +462,7 @@ export default function InterviewRoomClient({ session, initialMessages }: Interv
               </div>
               <div className="bg-gray-900/60 border border-gray-800/80 p-4 rounded-2xl rounded-tl-sm flex items-center gap-3">
                 <Loader2 className="w-4 h-4 text-indigo-400 animate-spin" />
-                <span className="text-xs text-gray-400 font-mono animate-pulse">Gemini está analizando tu respuesta...</span>
+                <span className="text-xs text-gray-400 font-mono animate-pulse">{copy.analyzing}</span>
               </div>
             </div>
           )}
@@ -496,7 +479,7 @@ export default function InterviewRoomClient({ session, initialMessages }: Interv
               disabled={sending}
               value={inputText}
               onChange={(e) => setInputText(e.target.value)}
-              placeholder={sending ? 'Espera a que el entrevistador responda...' : 'Escribe tu respuesta técnica aquí...'}
+              placeholder={sending ? copy.placeholderSending : copy.placeholder}
               className="flex-1 bg-transparent px-3 py-3 text-sm text-white placeholder-gray-500 focus:outline-none disabled:cursor-not-allowed"
             />
             <div className="flex items-center gap-2 shrink-0 ml-2">
@@ -504,7 +487,7 @@ export default function InterviewRoomClient({ session, initialMessages }: Interv
                 type="button"
                 onClick={startVoiceRecognition}
                 disabled={sending || isListening}
-                title="Dictar respuesta con el micrófono"
+                title={copy.micTitle}
                 className={`relative p-2.5 rounded-lg transition-all cursor-pointer disabled:cursor-not-allowed ${
                   isListening
                     ? 'bg-rose-500/20 text-rose-400 border border-rose-500/50 animate-pulse'
@@ -531,9 +514,7 @@ export default function InterviewRoomClient({ session, initialMessages }: Interv
           </div>
           <div className="flex justify-between items-center text-[10px] text-gray-500 mt-2 px-1">
             <span>
-              {isListening
-                ? 'Escuchando… habla ahora y revisa el texto antes de enviar'
-                : 'Presiona Enter para enviar · usa el micrófono para dictar'}
+              {isListening ? copy.listening : copy.hint}
             </span>
             <span>Autenticación: Cloud Service Account</span>
           </div>
