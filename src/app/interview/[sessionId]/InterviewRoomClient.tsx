@@ -28,6 +28,7 @@ interface Session {
   candidateName: string;
   technicalRole: string;
   experienceLevel: string;
+  language: 'es' | 'en';
   status: string;
 }
 

@@ -34,6 +34,7 @@ export default function Home() {
   const [name, setName] = useState('');
   const [selectedRole, setSelectedRole] = useState(TECHNICAL_ROLES[0].id);
   const [selectedLevel, setSelectedLevel] = useState('Mid');
+  const [language, setLanguage] = useState<'es' | 'en'>('es');
   const [loading, setLoading] = useState(false);
   const [loadingStep, setLoadingStep] = useState(0);
 
@@ -71,6 +72,7 @@ export default function Home() {
           candidateName: name,
           technicalRole: selectedRole,
           experienceLevel: selectedLevel,
+          language,
         }),
       });
 
@@ -137,6 +139,36 @@ export default function Home() {
               placeholder="Ingresa tu nombre para iniciar la simulación..."
               className="w-full bg-gray-900/60 border border-gray-800 rounded-xl px-4 py-3.5 text-white placeholder-gray-500 focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 transition-all font-medium"
             />
+          </div>
+
+          {/* IDIOMA DE LA ENTREVISTA */}
+          <div>
+            <label className="block text-sm font-semibold tracking-wide text-gray-300 mb-4 uppercase flex items-center gap-2">
+              <Activity className="w-4 h-4 text-indigo-400" />
+              Idioma de la Entrevista
+            </label>
+            <div className="inline-flex rounded-xl border border-gray-800/90 bg-gray-900/60 p-1 gap-1">
+              <button
+                type="button"
+                onClick={() => setLanguage('es')}
+                className={`px-4 py-2 rounded-xl text-sm font-semibold transition-all ${language === 'es'
+                  ? 'bg-indigo-500 text-white'
+                  : 'text-gray-300 hover:bg-gray-800/80'
+                }`}
+              >
+                Español
+              </button>
+              <button
+                type="button"
+                onClick={() => setLanguage('en')}
+                className={`px-4 py-2 rounded-xl text-sm font-semibold transition-all ${language === 'en'
+                  ? 'bg-indigo-500 text-white'
+                  : 'text-gray-300 hover:bg-gray-800/80'
+                }`}
+              >
+                English
+              </button>
+            </div>
           </div>
 
           {/* ROL A EVALUAR */}

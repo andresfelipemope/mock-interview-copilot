@@ -4,17 +4,31 @@ import { NextResponse } from 'next/server';
 
 export async function POST(req: Request) {
   try {
-    const { candidateName, technicalRole, experienceLevel } = await req.json();
+    const { candidateName, technicalRole, experienceLevel, language } = await req.json();
 
-    if (!candidateName || !technicalRole || !experienceLevel) {
+    if (!candidateName || !technicalRole || !experienceLevel || !language) {
       return NextResponse.json(
-        { error: 'Todos los campos (Nombre, Rol y Nivel) son requeridos.' },
+        { error: 'Todos los campos (Nombre, Rol, Nivel e Idioma) son requeridos.' },
         { status: 400 }
       );
     }
 
-    const systemInstruction = `Actúas como un Entrevistador Técnico Senior experto en ${technicalRole} con nivel de experiencia ${experienceLevel}. 
-Tu objetivo es realizar una entrevista técnica realista, rigurosa pero profesional y constructiva al candidato ${candidateName}.
+    const normalizedLanguage = language === 'en' ? 'en' : 'es';
+
+    const systemInstruction = normalizedLanguage === 'en'
+      ? `Act as a Senior Technical Interviewer expert in ${technicalRole} with experience level ${experienceLevel}. Your objective is to conduct a realistic, rigorous, yet professional and constructive technical interview for candidate ${candidateName}.
+
+Critical behavior instructions:
+1. Introduce yourself briefly in a professional manner in your first message and welcome the candidate.
+2. Ask exactly ONE technical question at a time. Wait for the candidate to answer before evaluating and moving to the next question.
+3. Evaluate the candidate's answer with precision and technical rigor. If there is any conceptual or implementation error, explain it constructively and concisely and show the correct alternative.
+4. Adapt the technical difficulty of the questions strictly to their level (${experienceLevel}). If Senior, ask about system design, scalability tradeoffs, advanced security, cost, and cloud resilience. If Junior, focus on fundamentals, APIs, and basic syntax.
+5. Maintain a formal, professional, empathetic, and constructive tone at all times.
+6. After 4 or 5 question-and-answer interactions, explicitly conclude the interview and provide a detailed report with:
+   - Strengths demonstrated.
+   - Areas for improvement.
+   - A conceptual score from 1 to 10 based on performance.`
+      : `Actúas como un Entrevistador Técnico Senior experto en ${technicalRole} con nivel de experiencia ${experienceLevel}. Tu objetivo es realizar una entrevista técnica realista, rigurosa pero profesional y constructiva al candidato ${candidateName}.
 
 Instrucciones críticas de comportamiento:
 1. Preséntate brevemente de forma profesional en tu primer mensaje y da la bienvenida al candidato.
@@ -34,7 +48,9 @@ Instrucciones críticas de comportamiento:
     // 2. Usar el nuevo Google Gen AI SDK
     const ai = getGenAI();
 
-    const initPrompt = `Inicia la entrevista técnica. Preséntate con formalidad corporativa ante el candidato ${candidateName}, dale la bienvenida a este espacio para evaluar su postulación como ${technicalRole} (${experienceLevel}), y realiza tu primera pregunta técnica sobre un tema base de este rol.`;
+    const initPrompt = normalizedLanguage === 'en'
+      ? `Start the technical interview. Introduce yourself professionally to candidate ${candidateName}, welcome them to this space to evaluate their application for ${technicalRole} (${experienceLevel}), and ask your first technical question about a basic topic for this role.`
+      : `Inicia la entrevista técnica. Preséntate con formalidad corporativa ante el candidato ${candidateName}, dale la bienvenida a este espacio para evaluar su postulación como ${technicalRole} (${experienceLevel}), y realiza tu primera pregunta técnica sobre un tema base de este rol.`;
 
     // Llamar al método del nuevo SDK unificado
     const aiResult = await ai.models.generateContent({
@@ -47,7 +63,10 @@ Instrucciones críticas de comportamiento:
 
 
     const initialQuestion = aiResult.text || 
-      `Hola ${candidateName}, bienvenido a tu entrevista técnica para el rol de ${technicalRole} (${experienceLevel}). Mi nombre es Gemini, seré tu evaluador hoy. Para comenzar, ¿podrías explicarnos qué consideraciones arquitectónicas priorizas al diseñar un servicio para que sea altamente disponible y tolerante a fallos?`;
+      (normalizedLanguage === 'en'
+        ? `Hello ${candidateName}, welcome to your technical interview for the ${technicalRole} role (${experienceLevel}). My name is Gemini and I will be your evaluator today. To begin, could you explain what architectural considerations you prioritize when designing a service to be highly available and fault tolerant?`
+        : `Hola ${candidateName}, bienvenido a tu entrevista técnica para el rol de ${technicalRole} (${experienceLevel}). Mi nombre es Gemini, seré tu evaluador hoy. Para comenzar, ¿podrías explicarnos qué consideraciones arquitectónicas priorizas al diseñar un servicio para que sea altamente disponible y tolerante a fallos?`
+      );
 
     const now = new Date();
 
@@ -57,6 +76,7 @@ Instrucciones críticas de comportamiento:
       candidateName,
       technicalRole,
       experienceLevel,
+      language: normalizedLanguage,
       status: 'active',
       systemInstructions: systemInstruction,
       createdAt: now,
