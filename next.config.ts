@@ -1,7 +1,9 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
-  /* config options here */
+  output: 'standalone',
+  /* Otras configuraciones del sandbox si son necesarias */
 };
 
 export default nextConfig;
+

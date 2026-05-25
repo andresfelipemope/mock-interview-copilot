@@ -1,0 +1,13 @@
+node_modules
+.next
+.git
+.gitignore
+gcp-key.json
+gcp-architecture-guide.md
+implementation_plan.md
+task.md
+walkthrough.md
+Dockerfile
+.dockerignore
+README.md
+CLAUDE.md
