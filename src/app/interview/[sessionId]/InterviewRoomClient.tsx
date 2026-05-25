@@ -13,8 +13,81 @@ import {
   Cloud,
   Loader2,
   Award,
-  Volume2
+  Mic,
+  Play,
+  Square
 } from 'lucide-react';
+
+function selectChipmunkVoice(language?: 'es' | 'en'): SpeechSynthesisVoice | null {
+  const voices = window.speechSynthesis.getVoices();
+  if (!voices.length) return null;
+
+  const langPrefix = language === 'en' ? 'en' : 'es';
+  const langVoices = voices.filter((v) => v.lang.toLowerCase().startsWith(langPrefix));
+
+  const chipmunkPatterns = [
+    /alvin/i,
+    /ardilla|squirrel/i,
+    /chipmunk|helium/i,
+    /child|niñ|kid|infantil/i,
+    /zira|paulina|helena|laura/i,
+  ];
+
+  for (const pattern of chipmunkPatterns) {
+    const match = langVoices.find((v) => pattern.test(v.name));
+    if (match) return match;
+  }
+
+  const highPitchHints = [/female|mujer|woman|femenin/i, /compact|mobile/i];
+  for (const pattern of highPitchHints) {
+    const match = langVoices.find((v) => pattern.test(v.name));
+    if (match) return match;
+  }
+
+  return langVoices[0] ?? voices[0] ?? null;
+}
+
+type SpeechRecognitionConstructor = new () => SpeechRecognition;
+
+interface SpeechRecognition extends EventTarget {
+  continuous: boolean;
+  lang: string;
+  interimResults: boolean;
+  onstart: (() => void) | null;
+  onerror: ((event: SpeechRecognitionErrorEvent) => void) | null;
+  onend: (() => void) | null;
+  onresult: ((event: SpeechRecognitionEvent) => void) | null;
+  start(): void;
+}
+
+interface SpeechRecognitionErrorEvent extends Event {
+  error: string;
+}
+
+interface SpeechRecognitionEvent extends Event {
+  results: SpeechRecognitionResultList;
+}
+
+interface SpeechRecognitionResultList {
+  [index: number]: SpeechRecognitionResult;
+  length: number;
+}
+
+interface SpeechRecognitionResult {
+  [index: number]: SpeechRecognitionAlternative;
+  length: number;
+}
+
+interface SpeechRecognitionAlternative {
+  transcript: string;
+}
+
+declare global {
+  interface Window {
+    SpeechRecognition?: SpeechRecognitionConstructor;
+    webkitSpeechRecognition?: SpeechRecognitionConstructor;
+  }
+}
 
 interface Message {
   id: string;
@@ -30,6 +103,7 @@ interface Session {
   experienceLevel: string;
   language: 'es' | 'en';
   status: string;
+  language?: 'es' | 'en';
 }
 
 interface InterviewRoomClientProps {
@@ -42,7 +116,77 @@ export default function InterviewRoomClient({ session, initialMessages }: Interv
   const [messages, setMessages] = useState<Message[]>(initialMessages);
   const [inputText, setInputText] = useState('');
   const [sending, setSending] = useState(false);
+  const [isListening, setIsListening] = useState(false);
+  const [playingMessageId, setPlayingMessageId] = useState<string | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const spokenMessageIdsRef = useRef<Set<string>>(new Set());
+  const chipmunkVoiceRef = useRef<SpeechSynthesisVoice | null>(null);
+
+  const speakText = (text: string, messageId?: string) => {
+    if (typeof window === 'undefined' || !window.speechSynthesis) return;
+
+    window.speechSynthesis.cancel();
+    setPlayingMessageId(null);
+
+    const utterance = new SpeechSynthesisUtterance(text);
+    utterance.lang = session.language === 'en' ? 'en-US' : 'es-ES';
+    utterance.pitch = 2;
+    utterance.rate = 1.25;
+
+    const voice =
+      chipmunkVoiceRef.current ?? selectChipmunkVoice(session.language);
+    if (voice) utterance.voice = voice;
+
+    if (messageId) {
+      utterance.onstart = () => setPlayingMessageId(messageId);
+      utterance.onend = () => setPlayingMessageId(null);
+      utterance.onerror = () => setPlayingMessageId(null);
+    }
+
+    window.speechSynthesis.speak(utterance);
+  };
+
+  const stopSpeaking = () => {
+    window.speechSynthesis?.cancel();
+    setPlayingMessageId(null);
+  };
+
+  const startVoiceRecognition = () => {
+    const SpeechRecognition =
+      window.SpeechRecognition || window.webkitSpeechRecognition;
+
+    if (!SpeechRecognition) {
+      alert(
+        'Tu navegador no soporta reconocimiento de voz nativo. Prueba con Google Chrome o Safari.'
+      );
+      return;
+    }
+
+    const recognition = new SpeechRecognition();
+    recognition.continuous = false;
+    recognition.lang = session.language === 'en' ? 'en-US' : 'es-ES';
+    recognition.interimResults = false;
+
+    recognition.onstart = () => {
+      setIsListening(true);
+    };
+
+    recognition.onerror = (event) => {
+      console.error(event);
+      setIsListening(false);
+    };
+
+    recognition.onend = () => {
+      setIsListening(false);
+    };
+
+    recognition.onresult = (event) => {
+      const transcript = event.results[0][0].transcript;
+      setInputText((prev) => (prev ? `${prev} ${transcript}` : transcript));
+    };
+
+    recognition.start();
+  };
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -51,6 +195,34 @@ export default function InterviewRoomClient({ session, initialMessages }: Interv
   useEffect(() => {
     scrollToBottom();
   }, [messages]);
+
+  useEffect(() => {
+    const loadVoices = () => {
+      chipmunkVoiceRef.current = selectChipmunkVoice(session.language);
+    };
+    loadVoices();
+    window.speechSynthesis?.addEventListener('voiceschanged', loadVoices);
+    return () => {
+      window.speechSynthesis?.removeEventListener('voiceschanged', loadVoices);
+    };
+  }, [session.language]);
+
+  useEffect(() => {
+    const modelMessages = messages.filter(
+      (m) => m.role === 'model' && !m.text.startsWith('🚨')
+    );
+    const lastModel = modelMessages[modelMessages.length - 1];
+    if (!lastModel || spokenMessageIdsRef.current.has(lastModel.id)) return;
+
+    spokenMessageIdsRef.current.add(lastModel.id);
+    speakText(lastModel.text, lastModel.id);
+  }, [messages, session.language]);
+
+  useEffect(() => {
+    return () => {
+      window.speechSynthesis?.cancel();
+    };
+  }, []);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -242,6 +414,9 @@ export default function InterviewRoomClient({ session, initialMessages }: Interv
         <div className="flex-1 overflow-y-auto p-5 space-y-4">
           {messages.map((msg) => {
             const isAI = msg.role === 'model';
+            const canPlay = isAI && !msg.text.startsWith('🚨');
+            const isPlaying = playingMessageId === msg.id;
+
             return (
               <div
                 key={msg.id}
@@ -265,8 +440,31 @@ export default function InterviewRoomClient({ session, initialMessages }: Interv
                   }`}>
                     {msg.text}
                   </div>
-                  <div className="text-[9px] text-gray-500 font-mono px-1">
-                    {new Date(msg.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                  <div className={`flex items-center gap-2 px-1 ${isAI ? '' : 'justify-end'}`}>
+                    <span className="text-[9px] text-gray-500 font-mono">
+                      {new Date(msg.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                    </span>
+                    {canPlay && (
+                      <button
+                        type="button"
+                        onClick={() =>
+                          isPlaying ? stopSpeaking() : speakText(msg.text, msg.id)
+                        }
+                        title={isPlaying ? 'Detener reproducción' : 'Escuchar mensaje del entrevistador'}
+                        className={`flex items-center gap-1 text-[10px] font-medium px-2 py-0.5 rounded-md transition-colors cursor-pointer ${
+                          isPlaying
+                            ? 'bg-indigo-500/20 text-indigo-300 border border-indigo-500/40'
+                            : 'bg-gray-800/80 text-gray-400 hover:text-indigo-300 hover:bg-gray-800 border border-gray-700/80'
+                        }`}
+                      >
+                        {isPlaying ? (
+                          <Square className="w-3 h-3 fill-current" />
+                        ) : (
+                          <Play className="w-3 h-3 fill-current" />
+                        )}
+                        {isPlaying ? 'Detener' : 'Escuchar'}
+                      </button>
+                    )}
                   </div>
                 </div>
               </div>
@@ -301,20 +499,42 @@ export default function InterviewRoomClient({ session, initialMessages }: Interv
               placeholder={sending ? 'Espera a que el entrevistador responda...' : 'Escribe tu respuesta técnica aquí...'}
               className="flex-1 bg-transparent px-3 py-3 text-sm text-white placeholder-gray-500 focus:outline-none disabled:cursor-not-allowed"
             />
-            <button
-              type="submit"
-              disabled={sending || !inputText.trim()}
-              className="bg-indigo-500 hover:bg-indigo-600 disabled:bg-gray-800 disabled:text-gray-600 text-white p-2.5 rounded-lg transition-all shrink-0 cursor-pointer disabled:cursor-not-allowed shadow-[0_0_10px_rgba(99,102,241,0.2)]"
-            >
-              {sending ? (
-                <Loader2 className="w-4.5 h-4.5 animate-spin" />
-              ) : (
-                <Send className="w-4.5 h-4.5" />
-              )}
-            </button>
+            <div className="flex items-center gap-2 shrink-0 ml-2">
+              <button
+                type="button"
+                onClick={startVoiceRecognition}
+                disabled={sending || isListening}
+                title="Dictar respuesta con el micrófono"
+                className={`relative p-2.5 rounded-lg transition-all cursor-pointer disabled:cursor-not-allowed ${
+                  isListening
+                    ? 'bg-rose-500/20 text-rose-400 border border-rose-500/50 animate-pulse'
+                    : 'bg-gray-800 hover:bg-gray-700 text-gray-300 hover:text-white disabled:bg-gray-800 disabled:text-gray-600'
+                }`}
+              >
+                <Mic className="w-4.5 h-4.5" />
+                {isListening && (
+                  <span className="absolute -top-0.5 -right-0.5 w-2.5 h-2.5 bg-rose-500 rounded-full animate-ping" />
+                )}
+              </button>
+              <button
+                type="submit"
+                disabled={sending || !inputText.trim()}
+                className="bg-indigo-500 hover:bg-indigo-600 disabled:bg-gray-800 disabled:text-gray-600 text-white p-2.5 rounded-lg transition-all cursor-pointer disabled:cursor-not-allowed shadow-[0_0_10px_rgba(99,102,241,0.2)]"
+              >
+                {sending ? (
+                  <Loader2 className="w-4.5 h-4.5 animate-spin" />
+                ) : (
+                  <Send className="w-4.5 h-4.5" />
+                )}
+              </button>
+            </div>
           </div>
           <div className="flex justify-between items-center text-[10px] text-gray-500 mt-2 px-1">
-            <span>Presiona Enter para enviar</span>
+            <span>
+              {isListening
+                ? 'Escuchando… habla ahora y revisa el texto antes de enviar'
+                : 'Presiona Enter para enviar · usa el micrófono para dictar'}
+            </span>
             <span>Autenticación: Cloud Service Account</span>
           </div>
         </form>

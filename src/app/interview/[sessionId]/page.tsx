@@ -27,6 +27,7 @@ export default async function InterviewPage({ params }: Props) {
       experienceLevel: sessionData.experienceLevel,
       language: sessionData.language,
       status: sessionData.status,
+      language: sessionData.language as 'es' | 'en' | undefined,
     };
 
     const messagesSnapshot = await db
